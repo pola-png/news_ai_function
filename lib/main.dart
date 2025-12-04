@@ -288,7 +288,6 @@ Return ONLY valid JSON with exactly these keys: "title", "summary", "body".
           'content': userContent,
         },
       ],
-      'temperature': 0.7,
     }),
   );
 
