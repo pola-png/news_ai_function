@@ -120,9 +120,18 @@ Future<dynamic> main(dynamic context) async {
       language: language,
     );
 
-    final String title = article['title']!;
-    final String summary = article['summary']!;
-    final String content = article['body']!;
+    // Apply hard limits so we respect Appwrite column sizes.
+    final String rawTitle = article['title']!;
+    final String rawSummary = article['summary']!;
+    final String rawContent = article['body']!;
+
+    final String title =
+        rawTitle.length > 255 ? rawTitle.substring(0, 255) : rawTitle;
+    final String summary =
+        rawSummary.length > 800 ? rawSummary.substring(0, 800) : rawSummary;
+    final String content = rawContent.length > 5000
+        ? rawContent.substring(0, 5000)
+        : rawContent;
 
     // ---------- SEO ----------
     final seo = _buildSeo(title, content);
