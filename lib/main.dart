@@ -29,7 +29,8 @@ import 'package:http/http.dart' as http;
 Future<dynamic> main(dynamic context) async {
   final req = context.req;
   final res = context.res;
-  final env = context.env;
+  // Use process environment; RuntimeContext may not expose `env` directly.
+  final Map<String, String> env = Platform.environment;
 
   if (req.method.toUpperCase() != 'POST') {
     return res.json({'error': 'Only POST is allowed'}, 405);
@@ -365,4 +366,3 @@ Map<String, dynamic> _buildSeo(String rawTitle, String rawContent) {
     'keywords': keywords,
   };
 }
-
