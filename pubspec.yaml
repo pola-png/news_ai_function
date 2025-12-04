@@ -1,0 +1,10 @@
+﻿name: news_ai_function
+description: "Appwrite function to generate AI news articles for XapZap."
+version: 0.0.1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  dart_appwrite: ^11.0.0
+  http: ^1.1.0
