@@ -155,8 +155,8 @@ Future<dynamic> main(dynamic context) async {
       'tags': seo['keywords'] as List<String>,
 
       // Media (placeholder thumbnail for now)
+      // NOTE: collection uses `thumbnailUr` (without the second "l")
       'thumbnailUr': defaultThumb,
-      'thumbnailUrl': defaultThumb,
       'imageUrls': <String>[],
       'videoUrl': null,
       'mediaSource': null,
@@ -210,7 +210,6 @@ Future<dynamic> main(dynamic context) async {
       'publishedAt': now,
       'createdByUserId': null,
       'approvedByUserId': null,
-      'createdAt': now,
     };
 
     final created = await databases.createDocument(
