@@ -26,11 +26,22 @@ import 'package:http/http.dart' as http;
 /// Optional:
 /// - OPENAI_MODEL                  (default: "gpt-5-nano")
 /// - NEWS_DEFAULT_THUMBNAIL_URL
+void _log(dynamic context, String message) {
+  try {
+    // New Appwrite runtimes expose `log` on the context.
+    context.log(message);
+  } catch (_) {
+    stderr.writeln(message);
+  }
+}
+
 Future<dynamic> main(dynamic context) async {
   final req = context.req;
   final res = context.res;
   // Use process environment; RuntimeContext may not expose `env` directly.
   final Map<String, String> env = Platform.environment;
+
+  _log(context, '[news_ai] Invocation started');
 
   if (req.method.toUpperCase() != 'POST') {
     return res.json({'error': 'Only POST is allowed'}, 405);
@@ -69,8 +80,9 @@ Future<dynamic> main(dynamic context) async {
     // ---------- Env vars ----------
     final String? openaiKey = env['OPENAI_API_KEY'];
     if (openaiKey == null || openaiKey.isEmpty) {
+      _log(context, '[news_ai] OPENAI_API_KEY is missing');
       return res.json(
-        {'error': 'OPENAI_API_KEY is not configured'},
+        {'error': 'Failed to generate news'},
         500,
       );
     }
@@ -83,8 +95,12 @@ Future<dynamic> main(dynamic context) async {
     if (appwriteEndpoint == null ||
         appwriteProjectId == null ||
         appwriteApiKey == null) {
+      _log(
+        context,
+        '[news_ai] Appwrite env missing: endpoint=$appwriteEndpoint projectId=$appwriteProjectId apiKeyConfigured=${appwriteApiKey != null}',
+      );
       return res.json(
-        {'error': 'APPWRITE_ENDPOINT / PROJECT_ID / API_KEY missing'},
+        {'error': 'Failed to generate news'},
         500,
       );
     }
@@ -95,6 +111,7 @@ Future<dynamic> main(dynamic context) async {
     final String defaultThumb =
         env['NEWS_DEFAULT_THUMBNAIL_URL']?.toString() ?? '';
 
+    _log(context, '[news_ai] Calling OpenAI model=$openaiModel topic="$topic" language=$language');
     // ---------- Generate article with OpenAI ----------
     final article = await _generateArticle(
       apiKey: openaiKey,
@@ -110,6 +127,7 @@ Future<dynamic> main(dynamic context) async {
     // ---------- SEO ----------
     final seo = _buildSeo(title, content);
 
+    _log(context, '[news_ai] OpenAI article generated, storing in Appwrite...');
     // ---------- Store in Appwrite ----------
     final client = Client()
       ..setEndpoint(appwriteEndpoint)
@@ -202,6 +220,11 @@ Future<dynamic> main(dynamic context) async {
       data: data,
     );
 
+    _log(
+      context,
+      '[news_ai] Stored news document id=${created.$id} topic="$topic" language=$language',
+    );
+
     return res.json(
       {
         'status': 'ok',
@@ -214,8 +237,8 @@ Future<dynamic> main(dynamic context) async {
       201,
     );
   } catch (e, st) {
-    stderr.writeln('Error in news_ai_function: $e');
-    stderr.writeln(st);
+    _log(context, 'Error in news_ai_function: $e');
+    _log(context, st.toString());
     return res.json(
       {
         'error': 'Failed to generate news',
