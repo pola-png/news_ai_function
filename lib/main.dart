@@ -206,7 +206,8 @@ Future<dynamic> main(dynamic context) async {
       'timezone': null,
 
       // Audit
-      'sourceType': 'ai_trending',
+      // Enum in table supports: api, manual, rss, external
+      'sourceType': 'api',
       'publishedAt': now,
       'createdByUserId': null,
       'approvedByUserId': null,
