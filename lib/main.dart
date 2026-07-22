@@ -31,14 +31,6 @@ Future<dynamic> main(dynamic context) async {
     final String language = ((body['language'] as String?) ?? 'en').trim().toLowerCase();
     final bool publishImmediately = body['publishImmediately'] as bool? ?? true;
 
-    // Env vars validation
-    final String? openaiKey = env['OPENAI_API_KEY'];
-    if (openaiKey == null || openaiKey.isEmpty) {
-      logMessage(context, '[publishing_platform] OPENAI_API_KEY is missing');
-      return res.json({'error': 'OPENAI_API_KEY environment variable is required'}, 500);
-    }
-    final String openaiModel = env['OPENAI_MODEL'] ?? 'gpt-4o';
-
     final String? appwriteEndpoint = env['APPWRITE_ENDPOINT'];
     final String? appwriteProjectId = env['APPWRITE_PROJECT_ID'];
     final String? appwriteApiKey = env['APPWRITE_API_KEY'];
@@ -66,7 +58,7 @@ Future<dynamic> main(dynamic context) async {
       final discoveredKeywords = await discoverTrends(context, env);
       
       logMessage(context, '[Phase 2] Analyzing and scoring keywords...');
-      final scoredKeywords = await scoreKeywords(context, openaiKey, openaiModel, discoveredKeywords);
+      final scoredKeywords = await scoreKeywords(context, discoveredKeywords);
       
       if (scoredKeywords.isEmpty) {
         return res.json({'status': 'idle', 'message': 'No keywords met the publishing threshold.'}, 200);
@@ -81,14 +73,12 @@ Future<dynamic> main(dynamic context) async {
 
     // --- Phase 3: Research AI / Knowledge Builder ---
     logMessage(context, '[Phase 3] Conducting research & building structured knowledge for "$targetTopic"...');
-    final knowledge = await buildResearchKnowledge(context, openaiKey, openaiModel, targetTopic);
+    final knowledge = await buildResearchKnowledge(context, targetTopic);
 
     // --- Phase 4 & 5: Multi-Agent Editorial System & Content Types ---
     logMessage(context, '[Phase 4] Launching Editorial pipeline (Editor, Research, Writer, SEO, Grammar, Fact Checker)...');
     final Map<String, dynamic> generatedArticle = await runEditorialPipeline(
       context: context,
-      apiKey: openaiKey,
-      model: openaiModel,
       topic: targetTopic,
       language: language,
       knowledge: knowledge,
@@ -96,7 +86,7 @@ Future<dynamic> main(dynamic context) async {
 
     // --- Phase 14: AI Moderation ---
     logMessage(context, '[Phase 14] Running AI Moderation and Quality Assurance audits...');
-    final moderation = await runModerationAudit(context, openaiKey, openaiModel, generatedArticle);
+    final moderation = await runModerationAudit(context, generatedArticle);
     if (moderation['status'] == 'failed') {
       logMessage(context, '[Phase 14] Article failed moderation: ${moderation['reason']}');
       return res.json({
@@ -151,7 +141,7 @@ Future<dynamic> main(dynamic context) async {
       'jsonLdSchema': jsonEncode(seoData['jsonLd']),
       
       // AI Parameters
-      'aiModel': openaiModel,
+      'aiModel': 'Local Rule-Based Generator',
       'aiPrompt': 'Autonomous generation for "$targetTopic".',
       'aiConfidence': 0.98,
       'aiGenerated': true,
