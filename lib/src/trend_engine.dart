@@ -1,11 +1,9 @@
 import 'dart:convert';
-import 'package:dart_appwrite/dart_appwrite.dart';
 import 'package:http/http.dart' as http;
 import 'utils.dart';
 
 DateTime? parseRssDate(String dateStr) {
   try {
-    // E.g., "Wed, 22 Jul 2026 12:00:00 +0000", "Wed, 22 Jul 2026 12:00:00 GMT", or "2026-07-22T12:00:00Z"
     if (dateStr.contains('T')) {
       return DateTime.parse(dateStr).toUtc();
     }
@@ -36,7 +34,7 @@ Future<List<Map<String, dynamic>>> discoverTrends(dynamic context, Map<String, S
   final List<Map<String, dynamic>> discovered = [];
   final nowUtc = DateTime.now().toUtc();
 
-  // 1. Fetch Google Trends RSS for 32 supported countries concurrently (All Categories)
+  // 1. Fetch Google Trends RSS for 32 supported countries concurrently
   final geos = [
     'US', 'NG', 'GB', 'CA', 'ZA', 'IN', 'AU', 'NZ', 'IE', 'SG', 'MY', 'PH',
     'DE', 'FR', 'ES', 'IT', 'BR', 'MX', 'AR', 'CO', 'CL', 'PE', 'JP', 'KR',
@@ -64,12 +62,14 @@ Future<List<Map<String, dynamic>>> discoverTrends(dynamic context, Map<String, S
         final pubDateMatch = RegExp(r'<pubDate>(.*?)<\/pubDate>').firstMatch(content);
         final descMatch = RegExp(r'<description>(.*?)<\/description>').firstMatch(content);
         final pictureMatch = RegExp(r'<ht:picture>(.*?)<\/ht:picture>').firstMatch(content);
+        final linkMatch = RegExp(r'<link>(.*?)<\/link>').firstMatch(content);
 
         final title = titleMatch?.group(1)?.trim() ?? '';
         final pubDateStr = pubDateMatch?.group(1)?.trim() ?? '';
         var desc = descMatch?.group(1)?.trim() ?? '';
         desc = desc.replaceAll(RegExp(r'<!\[CDATA\[(.*?)\]\]>', dotAll: true), r'$1');
         final picture = pictureMatch?.group(1)?.trim() ?? '';
+        final link = linkMatch?.group(1)?.trim() ?? '';
 
         if (title.isNotEmpty) {
           final pubDate = parseRssDate(pubDateStr);
@@ -81,6 +81,7 @@ Future<List<Map<String, dynamic>>> discoverTrends(dynamic context, Map<String, S
                 'context': desc.isNotEmpty ? desc : 'Trending topic in $geo: $title.',
                 'category': 'General',
                 'images': picture.isNotEmpty ? [picture] : <String>[],
+                'url': link,
               });
             }
           }
@@ -89,7 +90,7 @@ Future<List<Map<String, dynamic>>> discoverTrends(dynamic context, Map<String, S
     }
   }
 
-  // 2. Fetch Hacker News Top Stories concurrently (up to 100) and filter by last 5 hours
+  // 2. Fetch Hacker News Top Stories
   logMessage(context, '[Phase 1] Querying Hacker News top stories...');
   try {
     final response = await http.get(Uri.parse('https://hacker-news.firebaseio.com/v0/topstories.json')).timeout(Duration(seconds: 5));
@@ -107,14 +108,16 @@ Future<List<Map<String, dynamic>>> discoverTrends(dynamic context, Map<String, S
           final story = jsonDecode(resp.body) as Map<String, dynamic>;
           final title = story['title'] as String? ?? '';
           final time = story['time'] as int? ?? 0;
+          final link = story['url'] as String? ?? '';
           if (title.isNotEmpty && time > 0) {
             final storyDate = DateTime.fromMillisecondsSinceEpoch(time * 1000, isUtc: true);
             if (nowUtc.difference(storyDate).inHours <= 5) {
               discovered.add({
                 'keyword': title,
-                'context': 'Hacker News story: $title. Published at ${story['url'] ?? ''}',
+                'context': 'Hacker News story: $title.',
                 'category': 'Technology',
                 'images': <String>[],
+                'url': link,
               });
             }
           }
@@ -125,7 +128,7 @@ Future<List<Map<String, dynamic>>> discoverTrends(dynamic context, Map<String, S
     logMessage(context, 'HackerNews trend fetch skipped or failed: $e');
   }
 
-  // 3. Fetch Reddit /r/all/ RSS and parse titles/descriptions (All Categories, last 5 hours)
+  // 3. Fetch Reddit /r/all/ RSS
   logMessage(context, '[Phase 1] Querying Reddit /r/all RSS...');
   try {
     final response = await http.get(
@@ -141,9 +144,11 @@ Future<List<Map<String, dynamic>>> discoverTrends(dynamic context, Map<String, S
         final titleMatch = RegExp(r'<title>(.*?)<\/title>').firstMatch(content);
         final updatedMatch = RegExp(r'<updated>(.*?)<\/updated>').firstMatch(content);
         final contentMatch = RegExp(r'<content.*?>(.*?)<\/content>', dotAll: true).firstMatch(content);
+        final linkMatch = RegExp(r'<link[^>]+href="([^">]+)"').firstMatch(content);
 
         final title = titleMatch?.group(1)?.trim() ?? '';
         final updatedStr = updatedMatch?.group(1)?.trim() ?? '';
+        final link = linkMatch?.group(1)?.trim() ?? '';
         var rawContent = contentMatch?.group(1)?.trim() ?? '';
         rawContent = rawContent.replaceAll(RegExp(r'<[^>]*>'), '').trim();
         if (rawContent.length > 200) {
@@ -160,6 +165,7 @@ Future<List<Map<String, dynamic>>> discoverTrends(dynamic context, Map<String, S
                 'context': rawContent.isNotEmpty ? rawContent : 'Trending Reddit post: $title.',
                 'category': 'General',
                 'images': <String>[],
+                'url': link,
               });
             }
           }
@@ -170,7 +176,7 @@ Future<List<Map<String, dynamic>>> discoverTrends(dynamic context, Map<String, S
     logMessage(context, 'Reddit RSS fetch skipped or failed: $e');
   }
 
-  // 4. Fetch NewsAPI Top Headlines (All Categories, last 5 hours)
+  // 4. Fetch NewsAPI Top Headlines
   final String? newsApiKey = env['NEWS_IMAGE_API_KEY'];
   if (newsApiKey != null && newsApiKey.isNotEmpty) {
     logMessage(context, '[Phase 1] Querying NewsAPI top headlines...');
@@ -187,6 +193,7 @@ Future<List<Map<String, dynamic>>> discoverTrends(dynamic context, Map<String, S
           final desc = art['description'] as String? ?? '';
           final pic = art['urlToImage'] as String? ?? '';
           final pubAt = art['publishedAt'] as String? ?? '';
+          final link = art['url'] as String? ?? '';
           
           if (title.isNotEmpty) {
             final pubDate = parseRssDate(pubAt);
@@ -198,6 +205,7 @@ Future<List<Map<String, dynamic>>> discoverTrends(dynamic context, Map<String, S
                   'context': desc.isNotEmpty ? desc : title,
                   'category': 'General',
                   'images': pic.isNotEmpty ? [pic] : <String>[],
+                  'url': link,
                 });
               }
             }
@@ -246,6 +254,7 @@ Future<List<Map<String, dynamic>>> scoreKeywords(
         'context': item['context'] ?? '',
         'category': item['category'] ?? 'General',
         'images': item['images'] ?? <String>[],
+        'url': item['url'] ?? '',
         'searchVolume': searchVolume,
         'trendScore': trendScore,
         'difficulty': difficulty,
@@ -257,85 +266,7 @@ Future<List<Map<String, dynamic>>> scoreKeywords(
     }
   }
 
-  // Sort by overall score descending
   scored.sort((a, b) => (b['overallScore'] as num).compareTo(a['overallScore'] as num));
   logMessage(context, '[Phase 2] Scored keywords count: ${scored.length}');
-  return scored.isNotEmpty ? scored : [
-    {
-      'keyword': 'Artificial Intelligence coding assistants',
-      'context': 'Global developments in open source coding assistants and developer productivity tools.',
-      'category': 'Technology',
-      'images': <String>[],
-      'searchVolume': 45000,
-      'trendScore': 95,
-      'difficulty': 35,
-      'publishersCount': 5,
-      'viralityScore': 80,
-      'overallScore': 85.0,
-      'eligible': true
-    }
-  ];
-}
-
-// Topic Clustering
-Future<Map<String, dynamic>> createOrGetTopicCluster(
-  dynamic context,
-  Databases databases,
-  String databaseId,
-  String newsCollectionId,
-  List<Map<String, dynamic>> scoredKeywords,
-) async {
-  Map<String, dynamic>? selectedKeyword;
-
-  for (final kwData in scoredKeywords) {
-    final String keyword = kwData['keyword'] as String;
-    try {
-      final existing = await databases.listDocuments(
-        databaseId: databaseId,
-        collectionId: newsCollectionId,
-        queries: [
-          Query.equal('topic', keyword),
-          Query.limit(1),
-        ],
-      );
-      if (existing.total == 0) {
-        selectedKeyword = kwData;
-        break;
-      } else {
-        logMessage(context, 'Topic "$keyword" has already been published. Checking next trend...');
-      }
-    } catch (e) {
-      selectedKeyword = kwData;
-      break;
-    }
-  }
-
-  final bestKeyword = selectedKeyword ?? scoredKeywords.first;
-  final String pillar = bestKeyword['keyword'] as String;
-  final String category = bestKeyword['category'] as String? ?? 'General';
-  
-  final String clusterId = ID.unique();
-  
-  try {
-    await databases.createDocument(
-      databaseId: databaseId,
-      collectionId: 'topic_clusters',
-      documentId: clusterId,
-      data: {
-        'pillarKeyword': pillar,
-        'category': category,
-        'description': 'Topic cluster built around the core pillar topic: $pillar',
-        'createdAt': DateTime.now().toUtc().toIso8601String(),
-      },
-    );
-  } catch (e) {
-    logMessage(context, 'Could not save topic cluster to DB: $e');
-  }
-
-  return {
-    'pillar': pillar,
-    'clusterId': clusterId,
-    'context': bestKeyword['context'] ?? '',
-    'images': bestKeyword['images'] ?? <String>[],
-  };
+  return scored;
 }
