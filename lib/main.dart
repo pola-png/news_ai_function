@@ -69,7 +69,13 @@ Future<dynamic> main(dynamic context) async {
       }
 
       // Cluster creation (Pillar + Cluster strategy)
-      final selectedCluster = await createOrGetTopicCluster(context, databases, databaseId, scoredKeywords);
+      final selectedCluster = await createOrGetTopicCluster(
+        context,
+        databases,
+        databaseId,
+        env['NEWS_COLLECTION_ID'] ?? 'news',
+        scoredKeywords,
+      );
       targetTopic = selectedCluster['pillar']!;
       clusterId = selectedCluster['clusterId'];
       logMessage(context, '[Phase 2] Selected cluster pillar topic: "$targetTopic" (Cluster ID: $clusterId)');

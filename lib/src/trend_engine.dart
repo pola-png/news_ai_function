@@ -7,14 +7,21 @@ import 'utils.dart';
 Future<List<String>> discoverTrends(dynamic context, Map<String, String> env) async {
   final List<String> discovered = [];
 
+  // 1. Fetch Hacker News Top Stories concurrently (up to 100)
   try {
     final response = await http.get(Uri.parse('https://hacker-news.firebaseio.com/v0/topstories.json')).timeout(Duration(seconds: 5));
     if (response.statusCode == 200) {
       final List<dynamic> ids = jsonDecode(response.body) as List<dynamic>;
-      for (final id in ids.take(5)) {
-        final storyResp = await http.get(Uri.parse('https://hacker-news.firebaseio.com/v0/item/$id.json'));
-        if (storyResp.statusCode == 200) {
-          final story = jsonDecode(storyResp.body) as Map<String, dynamic>;
+      final targetIds = ids.take(100).toList();
+      
+      final futures = targetIds.map((id) => 
+        http.get(Uri.parse('https://hacker-news.firebaseio.com/v0/item/$id.json')).timeout(Duration(seconds: 4))
+      );
+      final responses = await Future.wait(futures);
+      
+      for (final resp in responses) {
+        if (resp.statusCode == 200) {
+          final story = jsonDecode(resp.body) as Map<String, dynamic>;
           final title = story['title'] as String? ?? '';
           if (title.isNotEmpty) {
             discovered.add(title);
@@ -26,14 +33,79 @@ Future<List<String>> discoverTrends(dynamic context, Map<String, String> env) as
     logMessage(context, 'HackerNews trend fetch skipped or failed: $e');
   }
 
-  final standardTrends = [
-    'Artificial Intelligence coding assistants',
-    'Open-source LLM local deployment',
-    'Next.js 16 server components performance',
-    'Quantum computing cloud access',
-    'Rust programming language memory safety benefits'
-  ];
-  discovered.addAll(standardTrends);
+  // 2. Fetch Google News RSS and parse titles using Regex
+  try {
+    final response = await http.get(Uri.parse('https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en')).timeout(Duration(seconds: 5));
+    if (response.statusCode == 200) {
+      final titleRegExp = RegExp(r'<title>(.*?)<\/title>', caseSensitive: false);
+      final matches = titleRegExp.allMatches(response.body);
+      for (final m in matches) {
+        var title = m.group(1)?.trim() ?? '';
+        title = title
+            .replaceAll('&amp;', '&')
+            .replaceAll('&lt;', '<')
+            .replaceAll('&gt;', '>')
+            .replaceAll('&quot;', '"')
+            .replaceAll('&apos;', "'");
+        if (title.isNotEmpty && !title.toLowerCase().contains('google news')) {
+          discovered.add(title);
+        }
+      }
+    }
+  } catch (e) {
+    logMessage(context, 'Google News RSS fetch skipped or failed: $e');
+  }
+
+  // 3. Fetch Reddit Technology RSS and parse titles using Regex
+  try {
+    final response = await http.get(
+      Uri.parse('https://www.reddit.com/r/technology/.rss'),
+      headers: {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    ).timeout(Duration(seconds: 5));
+    
+    if (response.statusCode == 200) {
+      final titleRegExp = RegExp(r'<title>(.*?)<\/title>', caseSensitive: false);
+      final matches = titleRegExp.allMatches(response.body);
+      for (final m in matches) {
+        var title = m.group(1)?.trim() ?? '';
+        title = title
+            .replaceAll('&amp;', '&')
+            .replaceAll('&lt;', '<')
+            .replaceAll('&gt;', '>')
+            .replaceAll('&quot;', '"')
+            .replaceAll('&apos;', "'");
+        if (title.isNotEmpty && !title.toLowerCase().contains('/r/technology') && !title.toLowerCase().contains('technology')) {
+          discovered.add(title);
+        }
+      }
+    }
+  } catch (e) {
+    logMessage(context, 'Reddit RSS fetch skipped or failed: $e');
+  }
+
+  // 4. Fetch NewsAPI Top Technology Headlines
+  final String? newsApiKey = env['NEWS_IMAGE_API_KEY'];
+  if (newsApiKey != null && newsApiKey.isNotEmpty) {
+    try {
+      final response = await http.get(
+        Uri.parse('https://newsapi.org/v2/top-headlines?category=technology&country=us&pageSize=50'),
+        headers: {'X-Api-Key': newsApiKey},
+      ).timeout(Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List<dynamic> articles = data['articles'] as List<dynamic>? ?? [];
+        for (final art in articles) {
+          final title = art['title'] as String? ?? '';
+          if (title.isNotEmpty) {
+            discovered.add(title);
+          }
+        }
+      }
+    } catch (e) {
+      logMessage(context, 'NewsAPI trend fetch skipped or failed: $e');
+    }
+  }
+
   final result = discovered.toSet().toList();
   logMessage(context, '[Phase 1] Discovered raw trends: $result');
   return result;
@@ -93,9 +165,36 @@ Future<Map<String, String>> createOrGetTopicCluster(
   dynamic context,
   Databases databases,
   String databaseId,
+  String newsCollectionId,
   List<Map<String, dynamic>> scoredKeywords,
 ) async {
-  final bestKeyword = scoredKeywords.first;
+  Map<String, dynamic>? selectedKeyword;
+
+  for (final kwData in scoredKeywords) {
+    final String keyword = kwData['keyword'] as String;
+    try {
+      final existing = await databases.listDocuments(
+        databaseId: databaseId,
+        collectionId: newsCollectionId,
+        queries: [
+          Query.equal('topic', keyword),
+          Query.limit(1),
+        ],
+      );
+      if (existing.total == 0) {
+        selectedKeyword = kwData;
+        break;
+      } else {
+        logMessage(context, 'Topic "$keyword" has already been published. Checking next trend...');
+      }
+    } catch (e) {
+      // If query fails (e.g. database not initialized), break and use the first one
+      selectedKeyword = kwData;
+      break;
+    }
+  }
+
+  final bestKeyword = selectedKeyword ?? scoredKeywords.first;
   final String pillar = bestKeyword['keyword'] as String;
   final String category = bestKeyword['category'] as String? ?? 'General';
   
