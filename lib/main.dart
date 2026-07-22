@@ -229,24 +229,45 @@ Future<dynamic> main(dynamic context) async {
         continue;
       }
 
-      logMessage(context, '[publishing_platform] Saving article to database...');
-      final doc = await databases.createDocument(
-        databaseId: databaseId,
-        collectionId: env['NEWS_COLLECTION_ID'] ?? 'news',
-        documentId: articleId,
-        data: articleDocument,
-      );
-
-      // --- Phase 8: Internal Linking Engine ---
-      logMessage(context, '[Phase 8] Building internal links graph...');
       try {
-        await buildInternalLinks(context, databases, databaseId, env['NEWS_COLLECTION_ID'] ?? 'news', doc.$id, clusterId);
-      } catch (e) {
-        logMessage(context, 'Internal linking warning: $e');
-      }
+        logMessage(context, '[publishing_platform] Saving article to database...');
+        final doc = await databases.createDocument(
+          databaseId: databaseId,
+          collectionId: env['NEWS_COLLECTION_ID'] ?? 'news',
+          documentId: articleId,
+          data: articleDocument,
+        );
 
-      logMessage(context, '[publishing_platform] Done! Saved with ID: ${doc.$id}');
-      publishedArticles.add(articleDocument);
+        // --- Phase 8: Internal Linking Engine ---
+        logMessage(context, '[Phase 8] Building internal links graph...');
+        try {
+          await buildInternalLinks(context, databases, databaseId, env['NEWS_COLLECTION_ID'] ?? 'news', doc.$id, clusterId);
+        } catch (e) {
+          logMessage(context, 'Internal linking warning: $e');
+        }
+
+        logMessage(context, '[publishing_platform] Done! Saved with ID: ${doc.$id}');
+        publishedArticles.add(articleDocument);
+      } catch (dbErr) {
+        logMessage(context, 'Failed to save article "$currentTopic" to database: $dbErr');
+        // Fallback: If it's a character limit error, we can attempt to save a trimmed version of the content
+        if (dbErr.toString().contains('no longer than 5500 chars')) {
+          logMessage(context, '[publishing_platform] Retrying with trimmed content under 5400 characters...');
+          try {
+            articleDocument['content'] = articleDocument['content'].toString().substring(0, 5300) + '\n\n*(Truncated due to database column limits. Please increase the "content" attribute size in the Appwrite Console to 65535 or larger to support full 1300+ word articles).*';
+            final doc = await databases.createDocument(
+              databaseId: databaseId,
+              collectionId: env['NEWS_COLLECTION_ID'] ?? 'news',
+              documentId: articleId,
+              data: articleDocument,
+            );
+            logMessage(context, '[publishing_platform] Done! Trimmed article saved with ID: ${doc.$id}');
+            publishedArticles.add(articleDocument);
+          } catch (retryErr) {
+            logMessage(context, 'Trimmed save retry failed: $retryErr');
+          }
+        }
+      }
     }
 
     return res.json({
