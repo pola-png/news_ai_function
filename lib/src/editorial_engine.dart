@@ -13,6 +13,9 @@ Future<Map<String, dynamic>> runEditorialPipeline({
   final subtitle = 'An in-depth analysis of recent shifts and operational impact';
   final summary = 'This analysis explores the core advancements of $topic, detail-oriented configurations, and how teams are adopting these patterns.';
   
+  logMessage(context, '[Rule-Based] Generated article title: "$title"');
+  logMessage(context, '[Rule-Based] Generated article summary: "$summary"');
+  
   final body = '''
 # $title
 

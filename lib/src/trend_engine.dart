@@ -34,8 +34,9 @@ Future<List<String>> discoverTrends(dynamic context, Map<String, String> env) as
     'Rust programming language memory safety benefits'
   ];
   discovered.addAll(standardTrends);
-
-  return discovered.toSet().toList();
+  final result = discovered.toSet().toList();
+  logMessage(context, '[Phase 1] Discovered raw trends: $result');
+  return result;
 }
 
 // Phase 2: Keyword Scoring
@@ -71,6 +72,7 @@ Future<List<Map<String, dynamic>>> scoreKeywords(
 
   // Sort by overall score descending
   scored.sort((a, b) => (b['overallScore'] as num).compareTo(a['overallScore'] as num));
+  logMessage(context, '[Phase 2] Scored keywords details: $scored');
   return scored.isNotEmpty ? scored : [
     {
       'keyword': 'Artificial Intelligence coding assistants',

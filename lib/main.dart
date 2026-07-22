@@ -156,6 +156,13 @@ Future<dynamic> main(dynamic context) async {
       'publishedAt': now,
     };
 
+    logMessage(context, '[publishing_platform] Article generated successfully!');
+    logMessage(context, '-> Title: ${generatedArticle['title']}');
+    logMessage(context, '-> Slug: ${seoData['slug']}');
+    logMessage(context, '-> Category: ${generatedArticle['category']}');
+    logMessage(context, '-> Summary: ${generatedArticle['summary']}');
+    logMessage(context, '-> Keywords: ${seoData['keywords']}');
+
     if (dryRun) {
       logMessage(context, '[publishing_platform] [DRY RUN] Skipping database save. Generated payload:');
       logMessage(context, jsonEncode(articleDocument));
