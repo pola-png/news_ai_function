@@ -39,7 +39,7 @@ Map<String, dynamic> generateSeoMetadata({
     'dateModified': DateTime.now().toUtc().toIso8601String(),
     'author': {
       '@type': 'Organization',
-      'name': 'XapZap AI Editor',
+      'name': 'XapZap News',
       'url': 'https://xapzap.com'
     },
     'publisher': {

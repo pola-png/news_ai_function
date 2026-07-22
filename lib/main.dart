@@ -53,10 +53,10 @@ Future<dynamic> main(dynamic context) async {
       ..setKey(appwriteApiKey);
     final databases = Databases(client);
 
-    String targetTopic = topicInput;
+    // List of topics to process
+    final List<Map<String, dynamic>> targetTopics = [];
 
     // --- Phase 1 & 2: Trend Discovery, Scoring & Clustering ---
-    String? clusterId;
     if (topicInput.toLowerCase() == 'auto') {
       logMessage(context, '[Phase 1] Discovering trending keywords from multiple sources...');
       final discoveredKeywords = await discoverTrends(context, env);
@@ -68,142 +68,196 @@ Future<dynamic> main(dynamic context) async {
         return res.json({'status': 'idle', 'message': 'No keywords met the publishing threshold.'}, 200);
       }
 
+      // Filter out keywords that have already been published
+      for (final kwData in scoredKeywords) {
+        final keyword = kwData['keyword'] as String;
+        try {
+          final existing = await databases.listDocuments(
+            databaseId: databaseId,
+            collectionId: env['NEWS_COLLECTION_ID'] ?? 'news',
+            queries: [
+              Query.equal('topic', keyword),
+              Query.limit(1),
+            ],
+          );
+          if (existing.total == 0) {
+            targetTopics.add(kwData);
+          } else {
+            logMessage(context, 'Topic "$keyword" has already been published. Skipping.');
+          }
+        } catch (_) {
+          // Default to add if DB query fails or collections not yet set up
+          targetTopics.add(kwData);
+        }
+      }
+
+      if (targetTopics.isEmpty) {
+        return res.json({'status': 'idle', 'message': 'All discovered trending keywords have already been published.'}, 200);
+      }
+    } else {
+      // Single topic input (manual run)
+      targetTopics.add({
+        'keyword': topicInput,
+        'context': 'Manual publication for "$topicInput".',
+        'category': 'General',
+        'images': <String>[],
+      });
+    }
+
+    logMessage(context, '[publishing_platform] Found ${targetTopics.length} topics to process.');
+    final List<Map<String, dynamic>> publishedArticles = [];
+
+    // Process all discovered trends in a batch
+    for (final topicData in targetTopics) {
+      final String currentTopic = topicData['keyword'] as String;
+      final String category = topicData['category'] as String? ?? 'General';
+      final String gatheredContext = topicData['context'] as String? ?? 'No extra context available.';
+      final List<dynamic> sourceImages = topicData['images'] as List<dynamic>? ?? [];
+
+      logMessage(context, '\n==================================================');
+      logMessage(context, 'PROCESSING TOPIC: "$currentTopic"');
+      logMessage(context, '==================================================');
+
       // Cluster creation (Pillar + Cluster strategy)
-      final selectedCluster = await createOrGetTopicCluster(
-        context,
-        databases,
-        databaseId,
-        env['NEWS_COLLECTION_ID'] ?? 'news',
-        scoredKeywords,
+      final String clusterId = ID.unique();
+      try {
+        await databases.createDocument(
+          databaseId: databaseId,
+          collectionId: 'topic_clusters',
+          documentId: clusterId,
+          data: {
+            'pillarKeyword': currentTopic,
+            'category': category,
+            'description': 'Topic cluster built around the core pillar topic: $currentTopic',
+            'createdAt': DateTime.now().toUtc().toIso8601String(),
+          },
+        );
+      } catch (e) {
+        logMessage(context, 'Could not save topic cluster to DB: $e');
+      }
+
+      // --- Phase 3: Research AI / Knowledge Builder ---
+      logMessage(context, '[Phase 3] Conducting research & building structured knowledge for "$currentTopic"...');
+      final knowledge = await buildResearchKnowledge(context, currentTopic, gatheredContext, sourceImages);
+
+      // --- Phase 4 & 5: Multi-Agent Editorial System & Content Types ---
+      logMessage(context, '[Phase 4] Launching Editorial pipeline (Editor, Research, Writer, SEO, Grammar, Fact Checker)...');
+      final Map<String, dynamic> generatedArticle = await runEditorialPipeline(
+        context: context,
+        topic: currentTopic,
+        language: language,
+        knowledge: knowledge,
       );
-      targetTopic = selectedCluster['pillar']!;
-      clusterId = selectedCluster['clusterId'];
-      logMessage(context, '[Phase 2] Selected cluster pillar topic: "$targetTopic" (Cluster ID: $clusterId)');
-    }
 
-    // --- Phase 3: Research AI / Knowledge Builder ---
-    logMessage(context, '[Phase 3] Conducting research & building structured knowledge for "$targetTopic"...');
-    final knowledge = await buildResearchKnowledge(context, targetTopic);
+      // --- Phase 14: AI Moderation ---
+      logMessage(context, '[Phase 14] Running AI Moderation and Quality Assurance audits...');
+      final moderation = await runModerationAudit(context, generatedArticle);
+      if (moderation['status'] == 'failed') {
+        logMessage(context, '[Phase 14] Article failed moderation: ${moderation['reason']}. Skipping.');
+        continue;
+      }
 
-    // --- Phase 4 & 5: Multi-Agent Editorial System & Content Types ---
-    logMessage(context, '[Phase 4] Launching Editorial pipeline (Editor, Research, Writer, SEO, Grammar, Fact Checker)...');
-    final Map<String, dynamic> generatedArticle = await runEditorialPipeline(
-      context: context,
-      topic: targetTopic,
-      language: language,
-      knowledge: knowledge,
-    );
+      // --- Phase 7: AI Image Generation ---
+      logMessage(context, '[Phase 7] Generating featured media for the article...');
+      // Use the first source image if available, else fall back to generation
+      final String imageUrl = sourceImages.isNotEmpty
+          ? sourceImages.first as String
+          : await generateFeaturedImage(context, env, currentTopic, generatedArticle['title']!);
 
-    // --- Phase 14: AI Moderation ---
-    logMessage(context, '[Phase 14] Running AI Moderation and Quality Assurance audits...');
-    final moderation = await runModerationAudit(context, generatedArticle);
-    if (moderation['status'] == 'failed') {
-      logMessage(context, '[Phase 14] Article failed moderation: ${moderation['reason']}');
-      return res.json({
-        'status': 'moderation_failed',
-        'reason': moderation['reason'],
-        'moderation_report': moderation
-      }, 400);
-    }
+      // --- Phase 6: SEO Engine ---
+      logMessage(context, '[Phase 6] Optimizing SEO metadata and schemas...');
+      final seoData = generateSeoMetadata(
+        title: generatedArticle['title']!,
+        body: generatedArticle['body']!,
+        summary: generatedArticle['summary']!,
+        imageUrl: imageUrl,
+        language: language,
+        faqs: generatedArticle['faqs'] as List<dynamic>? ?? [],
+      );
 
-    // --- Phase 7: AI Image Generation ---
-    logMessage(context, '[Phase 7] Generating featured media for the article...');
-    final imageUrl = await generateFeaturedImage(context, env, targetTopic, generatedArticle['title']!);
+      // --- Save to Appwrite ---
+      final now = DateTime.now().toUtc().toIso8601String();
+      final String articleId = ID.unique();
 
-    // --- Phase 6: SEO Engine ---
-    logMessage(context, '[Phase 6] Optimizing SEO metadata and schemas...');
-    final seoData = generateSeoMetadata(
-      title: generatedArticle['title']!,
-      body: generatedArticle['body']!,
-      summary: generatedArticle['summary']!,
-      imageUrl: imageUrl,
-      language: language,
-      faqs: generatedArticle['faqs'] as List<dynamic>? ?? [],
-    );
-
-    // --- Save to Appwrite ---
-    final now = DateTime.now().toUtc().toIso8601String();
-    final String articleId = ID.unique();
-
-    final Map<String, dynamic> articleDocument = {
-      'newsId': articleId,
-      'topic': targetTopic,
-      'language': language,
-      'title': generatedArticle['title']!,
-      'subtitle': generatedArticle['subtitle'] ?? '',
-      'content': generatedArticle['body']!,
-      'summary': generatedArticle['summary']!,
-      'category': generatedArticle['category'] ?? 'Technology',
-      'tags': (seoData['keywords'] as List<dynamic>).map((e) => e.toString()).toList(),
-      'thumbnailUr': imageUrl,
-      'imageUrls': [imageUrl],
-      'videoUrl': null,
-      'mediaSource': 'AI Generated',
-      'mediaCredits': 'Generated by DALL-E / Flux via Platform',
-      
-      // SEO Fields
-      'seoTitle': seoData['title'],
-      'seoDescription': seoData['description'],
-      'seoSlug': seoData['slug'],
-      'seoKeywords': (seoData['keywords'] as List<dynamic>).join(','),
-      'canonicalUrl': seoData['canonicalUrl'],
-      'ogImageUrl': imageUrl,
-      'jsonLdSchema': jsonEncode(seoData['jsonLd']),
-      
-      // AI Parameters
-      'aiModel': 'Local Rule-Based Generator',
-      'aiPrompt': 'Autonomous generation for "$targetTopic".',
-      'aiConfidence': 0.98,
-      'aiGenerated': true,
-      'status': publishImmediately ? 'published' : 'draft',
-      
-      // Relations
-      'clusterId': clusterId,
-      'publishedAt': now,
-    };
-
-    logMessage(context, '[publishing_platform] Article generated successfully!');
-    logMessage(context, '-> Title: ${generatedArticle['title']}');
-    logMessage(context, '-> Slug: ${seoData['slug']}');
-    logMessage(context, '-> Category: ${generatedArticle['category']}');
-    logMessage(context, '-> Summary: ${generatedArticle['summary']}');
-    logMessage(context, '-> Keywords: ${seoData['keywords']}');
-
-    if (dryRun) {
-      logMessage(context, '[publishing_platform] [DRY RUN] Skipping database save. Generated payload:');
-      logMessage(context, jsonEncode(articleDocument));
-      
-      return res.json({
-        'status': 'dry_run_ok',
-        'article': articleDocument,
-        'title': generatedArticle['title'],
-        'slug': seoData['slug'],
-        'moderation': moderation['status'],
+      final Map<String, dynamic> articleDocument = {
+        'newsId': articleId,
+        'topic': currentTopic,
+        'language': language,
+        'title': generatedArticle['title']!,
+        'subtitle': generatedArticle['subtitle'] ?? '',
+        'content': generatedArticle['body']!,
+        'summary': generatedArticle['summary']!,
+        'category': generatedArticle['category'] ?? 'Technology',
+        'tags': (seoData['keywords'] as List<dynamic>).map((e) => e.toString()).toList(),
+        'thumbnailUr': imageUrl,
+        'imageUrls': sourceImages.map((e) => e.toString()).toList()..add(imageUrl),
+        'videoUrl': null,
+        'mediaSource': 'AI Generated',
+        'mediaCredits': 'Generated by DALL-E / Flux via Platform',
+        
+        // SEO Fields
+        'seoTitle': seoData['title'],
+        'seoDescription': seoData['description'],
+        'seoSlug': seoData['slug'],
+        'seoKeywords': (seoData['keywords'] as List<dynamic>).join(','),
+        'canonicalUrl': seoData['canonicalUrl'],
+        'ogImageUrl': imageUrl,
+        'jsonLdSchema': jsonEncode(seoData['jsonLd']),
+        
+        // AI Parameters
+        'aiModel': 'Local Rule-Based Generator',
+        'aiPrompt': 'Autonomous generation for "$currentTopic".',
+        'aiConfidence': 0.98,
+        'aiGenerated': true,
+        'status': publishImmediately ? 'published' : 'draft',
+        
+        // Relations
         'clusterId': clusterId,
-      }, 200);
+        'publishedAt': now,
+      };
+
+      logMessage(context, '[publishing_platform] Article generated successfully!');
+      logMessage(context, '-> Title: ${generatedArticle['title']}');
+      logMessage(context, '-> Slug: ${seoData['slug']}');
+      logMessage(context, '-> Category: ${generatedArticle['category']}');
+      logMessage(context, '-> Summary: ${generatedArticle['summary']}');
+      logMessage(context, '-> Keywords: ${seoData['keywords']}');
+
+      if (dryRun) {
+        logMessage(context, '[publishing_platform] [DRY RUN] Skipping database save.');
+        publishedArticles.add(articleDocument);
+        continue;
+      }
+
+      logMessage(context, '[publishing_platform] Saving article to database...');
+      final doc = await databases.createDocument(
+        databaseId: databaseId,
+        collectionId: env['NEWS_COLLECTION_ID'] ?? 'news',
+        documentId: articleId,
+        data: articleDocument,
+      );
+
+      // --- Phase 8: Internal Linking Engine ---
+      logMessage(context, '[Phase 8] Building internal links graph...');
+      try {
+        await buildInternalLinks(context, databases, databaseId, env['NEWS_COLLECTION_ID'] ?? 'news', doc.$id, clusterId);
+      } catch (e) {
+        logMessage(context, 'Internal linking warning: $e');
+      }
+
+      logMessage(context, '[publishing_platform] Done! Saved with ID: ${doc.$id}');
+      publishedArticles.add(articleDocument);
     }
 
-    logMessage(context, '[publishing_platform] Saving article to database...');
-    final doc = await databases.createDocument(
-      databaseId: databaseId,
-      collectionId: env['NEWS_COLLECTION_ID'] ?? 'news',
-      documentId: articleId,
-      data: articleDocument,
-    );
-
-    // --- Phase 8: Internal Linking Engine ---
-    logMessage(context, '[Phase 8] Building internal links graph...');
-    await buildInternalLinks(context, databases, databaseId, env['NEWS_COLLECTION_ID'] ?? 'news', doc.$id, clusterId);
-
-    logMessage(context, '[publishing_platform] Done! Generated article saved with ID: ${doc.$id}');
     return res.json({
-      'status': 'ok',
-      'articleId': doc.$id,
-      'title': generatedArticle['title'],
-      'slug': seoData['slug'],
-      'moderation': moderation['status'],
-      'clusterId': clusterId,
-    }, 201);
+      'status': dryRun ? 'dry_run_ok' : 'ok',
+      'publishedCount': publishedArticles.length,
+      'articles': publishedArticles.map((a) => {
+        'title': a['title'],
+        'slug': a['seoSlug'],
+        'newsId': a['newsId'],
+      }).toList(),
+    }, 200);
 
   } catch (e, st) {
     logMessage(context, 'Critical error in publishing platform execution: $e');
