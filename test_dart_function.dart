@@ -39,7 +39,7 @@ void main() async {
   print('=== STARTING LOCAL DART FUNCTION DRY-RUN TEST ===');
 
   final requestBody = jsonEncode({
-    'topic': 'Vini Jr',
+    'topic': 'auto',
     'language': 'en',
     'publishImmediately': true,
     'dryRun': true
