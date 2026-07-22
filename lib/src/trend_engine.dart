@@ -63,13 +63,15 @@ Future<List<Map<String, dynamic>>> discoverTrends(dynamic context, Map<String, S
         final descMatch = RegExp(r'<description>(.*?)<\/description>').firstMatch(content);
         final pictureMatch = RegExp(r'<ht:picture>(.*?)<\/ht:picture>').firstMatch(content);
         final linkMatch = RegExp(r'<link>(.*?)<\/link>').firstMatch(content);
+        final newsUrlMatch = RegExp(r'<ht:news_item_url>(.*?)<\/ht:news_item_url>').firstMatch(content);
 
         final title = titleMatch?.group(1)?.trim() ?? '';
         final pubDateStr = pubDateMatch?.group(1)?.trim() ?? '';
         var desc = descMatch?.group(1)?.trim() ?? '';
         desc = desc.replaceAll(RegExp(r'<!\[CDATA\[(.*?)\]\]>', dotAll: true), r'$1');
         final picture = pictureMatch?.group(1)?.trim() ?? '';
-        final link = linkMatch?.group(1)?.trim() ?? '';
+        final newsUrl = newsUrlMatch?.group(1)?.trim() ?? '';
+        final link = newsUrl.isNotEmpty ? newsUrl : (linkMatch?.group(1)?.trim() ?? '');
 
         if (title.isNotEmpty) {
           final pubDate = parseRssDate(pubDateStr);

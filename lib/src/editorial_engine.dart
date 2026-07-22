@@ -15,12 +15,25 @@ Future<Map<String, dynamic>> runEditorialPipeline({
   final String? img2 = images.length > 1 ? images[1] as String : null;
 
   String gatheredContext = knowledge['context'] as String? ?? '';
+  final String seedKeywords = knowledge['seedKeywords'] as String? ?? '';
   
   // Clean HTML from context
   gatheredContext = HtmlCleaner.clean(gatheredContext);
 
   if (gatheredContext.isEmpty) {
     gatheredContext = 'Recent reports highlight the ongoing discussions and community observations regarding $topic.';
+  }
+
+  // Parse seed keywords
+  final List<String> kwList = [];
+  if (seedKeywords.isNotEmpty) {
+    final queries = seedKeywords.split(',');
+    for (final q in queries) {
+      final cleaned = q.replaceAll(RegExp(r'[^a-zA-Z0-9\s-]'), '').trim();
+      if (cleaned.isNotEmpty && cleaned.length > 2 && !kwList.contains(cleaned)) {
+        kwList.add(cleaned);
+      }
+    }
   }
 
   // Dynamic Category Detection
@@ -32,8 +45,17 @@ Future<Map<String, dynamic>> runEditorialPipeline({
   logMessage(context, '[Rule-Based] Extracted Entities: $entities');
 
   final title = topic.endsWith('.') ? topic.substring(0, topic.length - 1) : topic;
-  final subtitle = _getSubtitleForCategory(category, title, entities);
-  final summary = 'A comprehensive report exploring $title, examining its direct social, global, and regional impacts.';
+  
+  String subtitle = _getSubtitleForCategory(category, title, entities);
+  if (kwList.isNotEmpty) {
+    final kwTerms = kwList.take(2).join(' & ');
+    subtitle = '$subtitle — Key developments in relation to $kwTerms';
+  }
+
+  String summary = 'A comprehensive report exploring $title, examining its direct social, global, and regional impacts.';
+  if (kwList.isNotEmpty) {
+    summary = 'A comprehensive report exploring $title, examining its direct social, global, and regional impacts in relation to key trends like ${kwList.take(3).join(", ")}.';
+  }
 
   // Build category-specific narrative blocks to generate 1300+ words of real news prose
   final outline = _generateOutline(category, title, entities);
@@ -61,6 +83,12 @@ Future<Map<String, dynamic>> runEditorialPipeline({
   bodyBuffer.writeln('## Introduction');
   bodyBuffer.writeln(intro);
   bodyBuffer.writeln();
+
+  if (kwList.isNotEmpty) {
+    bodyBuffer.writeln('### Core Search Trends: ${kwList.take(3).join(", ")}');
+    bodyBuffer.writeln('An analysis of contemporary public indexes indicates strong traction for terms such as **${kwList.join(", ")}**, which are closely associated with the primary focus on **$title**.');
+    bodyBuffer.writeln();
+  }
   bodyBuffer.writeln('## Detailed Background and Chronology');
   bodyBuffer.writeln(chronology);
   bodyBuffer.writeln();

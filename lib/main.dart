@@ -199,6 +199,7 @@ Future<dynamic> main(dynamic context) async {
         imageUrl: imageUrl,
         language: language,
         faqs: generatedArticle['faqs'] as List<dynamic>? ?? [],
+        seedKeywords: initialContext,
       );
 
       // --- Save to Appwrite ---

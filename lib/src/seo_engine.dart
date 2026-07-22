@@ -7,6 +7,7 @@ Map<String, dynamic> generateSeoMetadata({
   required String imageUrl,
   required String language,
   required List<dynamic> faqs,
+  String? seedKeywords,
 }) {
   final slug = title
       .toLowerCase()
@@ -15,6 +16,17 @@ Map<String, dynamic> generateSeoMetadata({
       .replaceAll(RegExp(r'\s+'), '-');
 
   final canonicalUrl = 'https://xapzap.com/news/$slug';
+
+  final List<String> keywords = [];
+  if (seedKeywords != null && seedKeywords.isNotEmpty) {
+    final queries = seedKeywords.split(',');
+    for (final q in queries) {
+      final cleaned = q.replaceAll(RegExp(r'[^a-zA-Z0-9\s-]'), '').trim();
+      if (cleaned.isNotEmpty && cleaned.length > 2 && !keywords.contains(cleaned.toLowerCase())) {
+        keywords.add(cleaned);
+      }
+    }
+  }
 
   final words = body
       .toLowerCase()
@@ -27,8 +39,16 @@ Map<String, dynamic> generateSeoMetadata({
     wordCounts[w] = (wordCounts[w] ?? 0) + 1;
   }
   final sortedWords = wordCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
-  final keywords = sortedWords.take(5).map((e) => e.key).toList();
-  if (keywords.isEmpty) keywords.add('technology');
+  
+  for (final entry in sortedWords) {
+    if (keywords.length >= 10) break;
+    final w = entry.key;
+    if (!keywords.contains(w)) {
+      keywords.add(w);
+    }
+  }
+
+  if (keywords.isEmpty) keywords.add('news');
 
   final Map<String, dynamic> jsonLd = {
     '@context': 'https://schema.org',
