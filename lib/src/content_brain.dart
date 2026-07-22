@@ -1,6 +1,45 @@
 import 'package:http/http.dart' as http;
 import 'utils.dart';
 
+String toHdImageUrl(String url) {
+  if (url.isEmpty) return '';
+  var hdUrl = url;
+
+  if (hdUrl.contains('unsplash.com')) {
+    hdUrl = hdUrl.replaceAll(RegExp(r'[?&]w=\d+'), '');
+    hdUrl = hdUrl.replaceAll(RegExp(r'[?&]q=\d+'), '');
+    hdUrl = hdUrl.replaceAll(RegExp(r'[?&]h=\d+'), '');
+    if (hdUrl.contains('?')) {
+      hdUrl = '$hdUrl&w=1200&q=85&fit=crop';
+    } else {
+      hdUrl = '$hdUrl?w=1200&q=85&fit=crop';
+    }
+    return hdUrl;
+  }
+
+  if (hdUrl.contains('wikimedia.org') && hdUrl.contains('/thumb/')) {
+    final parts = hdUrl.split('/');
+    if (parts.length > 2) {
+      final cleanedParts = parts.toList()..removeLast()..removeWhere((p) => p == 'thumb');
+      hdUrl = cleanedParts.join('/');
+      return hdUrl;
+    }
+  }
+
+  final wpRegex = RegExp(r'-\d+x\d+(\.(jpg|jpeg|png|webp|gif))$', caseSensitive: false);
+  if (wpRegex.hasMatch(hdUrl)) {
+    hdUrl = hdUrl.replaceFirstMapped(wpRegex, (match) => match.group(1)!);
+    return hdUrl;
+  }
+
+  if (hdUrl.contains('googleusercontent.com') || hdUrl.contains('blogspot.com')) {
+    hdUrl = hdUrl.replaceAll(RegExp(r'/w\d+-h\d+/'), '/s1200/');
+    hdUrl = hdUrl.replaceAll(RegExp(r'/s\d+/'), '/s1200/');
+  }
+
+  return hdUrl;
+}
+
 class HtmlCleaner {
   static String clean(String html) {
     if (html.isEmpty) return '';
@@ -191,8 +230,35 @@ class SourceScraper {
             final uri = Uri.parse(url);
             imgUrl = '${uri.scheme}://${uri.host}$imgUrl';
           }
-          if (imgUrl.startsWith('http') && !extractedImages.contains(imgUrl)) {
-            extractedImages.add(imgUrl);
+
+          final lowerUrl = imgUrl.toLowerCase();
+          final List<String> junkKeywords = [
+            'icon', 'logo', 'avatar', 'profile', 'pixel', 'sprite', 'loader', 'spinner', 
+            'spacer', 'placeholder', 'shim', 'transparent', 'ad-', 'advertisement', 
+            'header', 'footer', 'nav', 'menu', 'button', 'share', 'facebook', 'twitter', 
+            'linkedin', 'instagram', 'youtube', 'pinterest', 'reddit'
+          ];
+          
+          bool isJunk = false;
+          for (final kw in junkKeywords) {
+            if (lowerUrl.contains(kw)) {
+              isJunk = true;
+              break;
+            }
+          }
+          
+          final tinySizeRegex = RegExp(r'[-_]\b([1-9]\d|100)x([1-9]\d|100)\b', caseSensitive: false);
+          if (tinySizeRegex.hasMatch(lowerUrl)) {
+            isJunk = true;
+          }
+
+          if (isJunk) continue;
+
+          // Convert to HD resolution URL
+          final String hdUrl = toHdImageUrl(imgUrl);
+
+          if (hdUrl.startsWith('http') && !extractedImages.contains(hdUrl)) {
+            extractedImages.add(hdUrl);
           }
           if (extractedImages.length >= 5) break;
         }
