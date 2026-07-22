@@ -30,6 +30,7 @@ Future<dynamic> main(dynamic context) async {
     final String topicInput = ((body['topic'] as String?) ?? 'auto').trim();
     final String language = ((body['language'] as String?) ?? 'en').trim().toLowerCase();
     final bool publishImmediately = body['publishImmediately'] as bool? ?? true;
+    final bool dryRun = body['dryRun'] as bool? ?? false;
 
     final String? appwriteEndpoint = env['APPWRITE_ENDPOINT'];
     final String? appwriteProjectId = env['APPWRITE_PROJECT_ID'];
@@ -151,6 +152,20 @@ Future<dynamic> main(dynamic context) async {
       'clusterId': clusterId,
       'publishedAt': now,
     };
+
+    if (dryRun) {
+      logMessage(context, '[publishing_platform] [DRY RUN] Skipping database save. Generated payload:');
+      logMessage(context, jsonEncode(articleDocument));
+      
+      return res.json({
+        'status': 'dry_run_ok',
+        'article': articleDocument,
+        'title': generatedArticle['title'],
+        'slug': seoData['slug'],
+        'moderation': moderation['status'],
+        'clusterId': clusterId,
+      }, 200);
+    }
 
     logMessage(context, '[publishing_platform] Saving article to database...');
     final doc = await databases.createDocument(
