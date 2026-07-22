@@ -142,17 +142,40 @@ class EntityRecognizer {
 }
 
 class SourceScraper {
+  static String cleanSocialMediaBoilerplate(String text, String url) {
+    if (url.contains('twitter.com') || url.contains('x.com')) {
+      var cleaned = text
+          .replaceAll('Post Log in Sign up Post', '')
+          .replaceAll(RegExp(r'New to X\?.*Timeline!', caseSensitive: false), '')
+          .replaceAll(RegExp(r'Sign up with Google.*Create account', caseSensitive: false), '')
+          .replaceAll(RegExp(r'By signing up, you agree to.*Cookie Use\.', caseSensitive: false), '')
+          .replaceAll(RegExp(r'Relevant people.*Follow', caseSensitive: false), '')
+          .replaceAll(RegExp(r'Don\x27t miss what\x27s happening.*Log in Sign up', caseSensitive: false), '')
+          .replaceAll(RegExp(r'Trending now.*', caseSensitive: false), '')
+          .replaceAll(RegExp(r'\b\d+(\.\d+)?(K|M|B)?\b Views', caseSensitive: false), '')
+          .replaceAll(RegExp(r'Read \d+ replies', caseSensitive: false), '')
+          .replaceAll(RegExp(r'Log in Sign up', caseSensitive: false), '')
+          .replaceAll(RegExp(r'People on X are the first to know\.', caseSensitive: false), '');
+      
+      cleaned = cleaned.replaceAll(RegExp(r'\s+'), ' ').trim();
+      return cleaned;
+    }
+    return text;
+  }
+
   static Future<Map<String, dynamic>> scrape(dynamic context, String? url) async {
     if (url == null || url.isEmpty || !url.startsWith('http')) {
-      return {'content': '', 'images': <String>[]};
+      return {'content': '', 'images': <String>[], 'isSocial': false};
     }
     
     logMessage(context, '[SourceScraper] Crawling external source: $url');
+    final bool isSocial = url.contains('twitter.com') || url.contains('x.com') || url.contains('reddit.com') || url.contains('instagram.com');
+    
     try {
       final response = await http.get(Uri.parse(url), headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
       }).timeout(const Duration(seconds: 5));
-
+ 
       if (response.statusCode == 200) {
         final html = response.body;
         
@@ -173,21 +196,24 @@ class SourceScraper {
           }
           if (extractedImages.length >= 5) break;
         }
-
+ 
         // Clean HTML to text
-        final cleanedText = HtmlCleaner.clean(html);
+        var cleanedText = HtmlCleaner.clean(html);
+        if (isSocial) {
+          cleanedText = cleanSocialMediaBoilerplate(cleanedText, url);
+        }
         
-        // Return first 6000 characters of clean text
         final content = cleanedText.length > 6000 ? cleanedText.substring(0, 6000) : cleanedText;
         return {
           'content': content,
           'images': extractedImages,
+          'isSocial': isSocial,
         };
       }
     } catch (e) {
       logMessage(context, '[SourceScraper] Scraper failed for $url: $e');
     }
     
-    return {'content': '', 'images': <String>[]};
+    return {'content': '', 'images': <String>[], 'isSocial': isSocial};
   }
 }

@@ -16,6 +16,7 @@ Future<Map<String, dynamic>> runEditorialPipeline({
 
   String gatheredContext = knowledge['context'] as String? ?? '';
   final String seedKeywords = knowledge['seedKeywords'] as String? ?? '';
+  final String mediaCredits = knowledge['mediaCredits'] as String? ?? 'Original Publisher';
   
   // Clean HTML from context
   gatheredContext = HtmlCleaner.clean(gatheredContext);
@@ -77,6 +78,7 @@ Future<Map<String, dynamic>> runEditorialPipeline({
 
   if (img1 != null) {
     bodyBuffer.writeln('![Primary Visual: $title]($img1)');
+    bodyBuffer.writeln('*Image Source: $mediaCredits*');
     bodyBuffer.writeln();
   }
 
@@ -98,6 +100,7 @@ Future<Map<String, dynamic>> runEditorialPipeline({
 
   if (img2 != null) {
     bodyBuffer.writeln('![Supporting Visual: $title]($img2)');
+    bodyBuffer.writeln('*Image Source: $mediaCredits*');
     bodyBuffer.writeln();
   }
 
