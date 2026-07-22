@@ -19,14 +19,17 @@ Future<dynamic> main(dynamic context) async {
 
   logMessage(context, '[publishing_platform] Platform execution started');
 
-  if (req.method.toUpperCase() != 'POST') {
-    return res.json({'error': 'Only POST is allowed'}, 405);
+  final method = req.method.toUpperCase();
+  if (method != 'POST' && method != 'GET') {
+    return res.json({'error': 'Only GET and POST are allowed'}, 405);
   }
 
   try {
     // 1. Parse input parameters
-    final rawBody = req.body ?? '{}';
-    final Map<String, dynamic> body = jsonDecode(rawBody) as Map<String, dynamic>;
+    final String rawBody = (req.body as String? ?? '').trim();
+    final Map<String, dynamic> body = rawBody.isEmpty 
+        ? <String, dynamic>{} 
+        : jsonDecode(rawBody) as Map<String, dynamic>;
     final String topicInput = ((body['topic'] as String?) ?? 'auto').trim();
     final String language = ((body['language'] as String?) ?? 'en').trim().toLowerCase();
     final bool publishImmediately = body['publishImmediately'] as bool? ?? true;
