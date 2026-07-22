@@ -1,0 +1,18 @@
+# Dependency directories
+node_modules/
+.dart_tool/
+.packages
+
+# Local configuration
+.env
+.env.local
+.env.production
+
+# IDEs and editors
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
