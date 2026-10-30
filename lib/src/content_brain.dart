@@ -235,7 +235,8 @@ class SourceScraper {
           final List<String> junkKeywords = [
             'icon', 'logo', 'avatar', 'profile', 'pixel', 'sprite', 'loader', 'spinner', 
             'spacer', 'placeholder', 'shim', 'transparent', 'ad-', 'advertisement', 
-            'header', 'footer', 'nav', 'menu', 'button', 'share', 'facebook', 'twitter', 
+            'header', 'footer', 'nav', 'menu', 'button', 'share', 'facebook.com/tr', 
+            '/tr?', 'tracking', 'analytics', 'noscript=1', 'twitter', 
             'linkedin', 'instagram', 'youtube', 'pinterest', 'reddit'
           ];
           
